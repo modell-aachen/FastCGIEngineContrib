@@ -14,11 +14,10 @@
 package Foswiki::Contrib::FastCGIEngineContrib;
 
 use strict;
+use warnings;
 
-use vars qw( $VERSION $RELEASE $SHORTDESCRIPTION );
-
-$VERSION          = '0.9';
-$RELEASE = "0.9";
-$SHORTDESCRIPTION = 'Permits Foswiki to be executed with FastCGI';
+our $VERSION          = '1.02';
+our $RELEASE          = '1.02';
+our $SHORTDESCRIPTION = 'Permits Foswiki to be executed with FastCGI';
 
 1;
