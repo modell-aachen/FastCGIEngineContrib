@@ -12,10 +12,13 @@ Refer to Foswiki::Engine documentation for explanation about methos below.
 
 package Foswiki::Engine::FastCGI;
 
+use strict;
+use warnings;
+
+use Foswiki          ();
+use Foswiki::Sandbox ();
 use Foswiki::Engine::CGI;
 our @ISA = qw( Foswiki::Engine::CGI );
-
-use strict;
 
 use FCGI;
 use POSIX qw(:signal_h);
@@ -49,12 +52,14 @@ threads and fcgi backend processes that are allowed to be spawned by the web ser
 
 =cut
 
-our $maxRequests = $Foswiki::cfg{FastCGIContrib}{MaxRequests} || 100;
+our $sock = 0;
 
 sub run {
     my ( $this, $listen, $args ) = @_;
 
-    my $sock = 0;
+    # untaint pidfile
+    $args->{pidfile} = Foswiki::Sandbox::untaintUnchecked( $args->{pidfile} );
+
     if ($listen) {
         $sock = FCGI::OpenSocket( $listen, 100 )
           or die "Failed to create FastCGI socket: $!";
@@ -64,6 +69,11 @@ sub run {
         &FCGI::FAIL_ACCEPT_ON_INTR );
     my $manager;
 
+    # make sure some ENV vars are set
+    $ENV{"REQUEST_URI"} = ''             unless defined $ENV{REQUEST_URI};
+    $ENV{"PATH_INFO"}   = ''             unless defined $ENV{PATH_INFO};
+    $ENV{"SCRIPT_NAME"} = 'foswiki.fcgi' unless defined $ENV{SCRIPT_NAME};
+
     if ($listen) {
         $args->{manager} ||= 'Foswiki::Engine::FastCGI::ProcManager';
         $args->{nproc}   ||= 1;
@@ -71,12 +81,27 @@ sub run {
         $this->fork() if $args->{detach};
         eval "use " . $args->{manager} . "; 1";
         unless ($@) {
+            my $maxRequests = $Foswiki::cfg{FastCGIContrib}{MaxRequests} || 100;
+            my $maxSize     = $Foswiki::cfg{FastCGIContrib}{MaxSize}     || 0;
+            my $checkSize   = $Foswiki::cfg{FastCGIContrib}{CheckSize}   || 10;
+
             $manager = $args->{manager}->new(
                 {
                     n_processes => $args->{nproc},
                     pid_fname   => $args->{pidfile},
+                    quiet       => $args->{quiet},
+
+                    max_requests =>
+                      ( defined $args->{max} ? $args->{max} : $maxRequests ),
+
+                    max_size =>
+                      ( defined $args->{size} ? $args->{size} : $maxSize ),
+
+                    sizecheck_num_requests =>
+                      ( defined $args->{check} ? $args->{check} : $checkSize ),
                 }
             );
+
             $manager->pm_manage();
         }
         else {    # No ProcManager
@@ -92,11 +117,24 @@ sub run {
         $this->daemonize() if $args->{detach};
     }
 
-    my $localSiteCfg = $INC{'LocalSite.cfg'};
-    die "LocalSite.cfg is not loaded - Check permissions or run configure\n"
-      unless defined $localSiteCfg;
+    my $localSiteCfg;
+    my $lastMTime = 0;
+    my $mtime     = 0;
 
-    my $lastMTime = ( stat $localSiteCfg )[9];
+  # If $localSiteCfg is undefined, then foswiki is running in bootstrap mode.
+  # kill and restart the proc manager after every transaction, so that
+  # when the config file is saved, it gets used.   Note that on some high volume
+  # installations, LocalSite.cfg checking needs to be disabled.
+
+    if ( !defined $Foswiki::cfg{FastCGIContrib}{CheckLocalSiteCfg}
+        || $Foswiki::cfg{FastCGIContrib}{CheckLocalSiteCfg} )
+    {
+
+        $localSiteCfg = $INC{'LocalSite.cfg'};
+        if ( defined $localSiteCfg ) {
+            $lastMTime = ( stat $localSiteCfg )[9];
+        }
+    }
 
     while ( $r->Accept() >= 0 ) {
         $manager && $manager->pm_pre_dispatch();
@@ -108,9 +146,9 @@ sub run {
             $this->finalize( $res, $req );
         }
 
-        my $mtime = ( stat $localSiteCfg )[9];
-        $maxRequests--;
-        if ( $mtime > $lastMTime || $hupRecieved || $maxRequests == 0 ) {
+        $mtime = ( stat $localSiteCfg )[9] if defined $localSiteCfg;
+
+        if ( $mtime > $lastMTime || $hupRecieved ) {
             $r->LastCall();
             if ($manager) {
                 kill SIGHUP, $manager->pm_parameter('MANAGER_PID');
@@ -121,8 +159,8 @@ sub run {
         }
         $manager && $manager->pm_post_dispatch();
     }
-    reExec() if $hupRecieved || $maxRequests == 0;
-    FCGI::CloseSocket($sock) if $sock;
+    reExec() if $hupRecieved;
+    closeSocket();
 }
 
 sub preparePath {
@@ -143,7 +181,8 @@ sub preparePath {
     # way, SUPER::preparePath works fine.
 
     $ENV{PATH_INFO} =~ s#^$Foswiki::cfg{ScriptUrlPath}/*#/#
-      if $ENV{PATH_INFO};
+      if ( $ENV{PATH_INFO} && defined $Foswiki::cfg{ScriptUrlPath} );
+
     $this->SUPER::preparePath(@_);
 }
 
@@ -151,15 +190,28 @@ sub write {
     syswrite STDOUT, $_[1];
 }
 
+sub closeSocket {
+    return unless $sock;
+    FCGI::CloseSocket($sock);
+    $sock = 0;
+}
+
 sub reExec {
+    closeSocket();
+
     require Config;
-    $ENV{PERL5LIB} .= join $Config::Config{path_sep}, @INC;
-    $ENV{PATH} = $Foswiki::cfg{SafeEnvPath};
+
+    #SMELL: This was growing PERL5LIB on every reExec.
+    #$ENV{PERL5LIB} .= join $Config::Config{path_sep}, @INC;
+
+    $ENV{PATH} = $Foswiki::cfg{SafeEnvPath}
+      if ( defined $Foswiki::cfg{SafeEnvPath} );
     my $perl = $Config::Config{perlpath};
     chdir $main::dir
       or die
       "Foswiki::Engine::FastCGI::reExec(): Could not restore directory: $!";
-    exec $perl, '-wT', $main::script, map { /^(.*)$/; $1 } @ARGV
+
+    exec $perl, $main::script, map { /^(.*)$/; $1 } @ARGV
       or die "Foswiki::Engine::FastCGI::reExec(): Could not exec(): $!";
 }
 
@@ -197,7 +249,6 @@ Daemonize process. Currently not portable...
 =cut
 
 sub daemonize {
-    print "FastCGI daemon started (pid $$)\n";
     umask(0);
     chdir File::Spec->rootdir;
     open STDIN,  File::Spec->devnull or die $!;
@@ -212,7 +263,7 @@ __END__
 FastCGI Runtime Engine of Foswiki - The Free and Open Source Wiki,
 http://foswiki.org/
 
-Copyright (C) 2008 Gilmar Santos Jr, jgasjr@gmail.com and Foswiki
+Copyright (C) 2008-2015 Gilmar Santos Jr, jgasjr@gmail.com and Foswiki
 contributors. Foswiki contributors are listed in the AUTHORS file in the root
 of Foswiki distribution.
 
