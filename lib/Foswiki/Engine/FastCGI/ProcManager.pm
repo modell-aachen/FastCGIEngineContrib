@@ -35,26 +35,6 @@ use FCGI::ProcManager::Constrained;
 use Foswiki::Engine::FastCGI ();
 our @ISA = qw( FCGI::ProcManager::Constrained );
 
-sub sig_manager {
-    my $this = shift;
-    $this->SUPER::sig_manager(@_);
-    $Foswiki::Engine::FastCGI::hupRecieved++;
-    $this->n_processes(0);
-}
-
-sub pm_die {
-    my ($this, $msg, $n) = @_;
-
-    $msg ||= ''; # protect against error in FCGI.pm
-
-    if ($Foswiki::Engine::FastCGI::hupRecieved) {
-        Foswiki::Engine::FastCGI::reExec();
-    }
-    else {
-        $this->SUPER::pm_die($msg, $n);
-    }
-}
-
 sub pm_notify {
     my ($this, $msg) = @_;
 
