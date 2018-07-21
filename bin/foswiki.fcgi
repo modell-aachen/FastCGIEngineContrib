@@ -27,6 +27,7 @@ use strict;
 use warnings;
 
 BEGIN {
+    chdir "$ENV{FOSWIKI_ROOT}/bin" if $ENV{FOSWIKI_ROOT};
     $Foswiki::cfg{Engine} = 'Foswiki::Engine::FastCGI';
     @INC = ( '.', grep { $_ ne '.' } @INC );
     delete $ENV{FOSWIKI_ACTION} if exists $ENV{FOSWIKI_ACTION};
@@ -55,7 +56,7 @@ GetOptions(
     'manager|M=s' => \$manager,
     'daemon|d'    => \$detach,
     'help|?'      => \$help,
-    'quiet|q'     => \$quiet,
+    'quiet|q=i'   => \$quiet,
 );
 
 pod2usage(1) if $help;
