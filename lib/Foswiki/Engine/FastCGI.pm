@@ -102,6 +102,8 @@ sub run {
                 }
             );
 
+            $this->warm($manager) if $args->{warming};
+
             $manager->pm_manage();
         }
         else {    # No ProcManager
@@ -140,6 +142,26 @@ sub run {
         reExec() if $hupRecieved;
     }
     closeSocket();
+}
+
+sub warm {
+    my ($this, $manager) = @_;
+
+    eval {
+        local $ENV{FOSWIKI_ACTION} = 'view';
+        require Foswiki::Request;
+        my $req = Foswiki::Request->new({url => '/System/WebHome?skin=text'});
+        my $session = new Foswiki(undef, $req, { view => 1 });
+        $session->finish() if $session;
+    };
+    if($@) {
+        my $message = "Error while warming: $@\n";
+        if($manager) {
+            $manager->pm_notify($message);
+        } else {
+            warn $message;
+        }
+    }
 }
 
 sub preparePath {

@@ -45,7 +45,7 @@ our ($dir)    = Cwd::cwd() =~ /^(.*)$/;
 
 my @argv = @ARGV;
 
-my ( $listen, $nproc, $max, $size, $check, $pidfile, $manager, $detach, $help, $quiet );
+my ( $listen, $nproc, $max, $size, $check, $pidfile, $manager, $detach, $help, $quiet, $warming );
 GetOptions(
     'listen|l=s'  => \$listen,
     'nproc|n=i'   => \$nproc,
@@ -57,6 +57,7 @@ GetOptions(
     'daemon|d'    => \$detach,
     'help|?'      => \$help,
     'quiet|q=i'   => \$quiet,
+    'warming|w=i' => \$warming,
 );
 
 pod2usage(1) if $help;
@@ -80,6 +81,7 @@ $Foswiki::engine->run(
         max     => $max,
         size    => $size,
         check   => $check,
+        warming => $warming,
     }
 );
 
