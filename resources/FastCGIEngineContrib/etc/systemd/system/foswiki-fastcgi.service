@@ -1,5 +1,5 @@
 [Unit]
-Description=Foswiki
+Description=Foswiki FastCGI
 
 [Service]
 Environment=FOSWIKI_ROOT=/var/www/qwikis/core
@@ -13,7 +13,7 @@ Environment=FOSWIKI_QUIET=0
 Environment=FOSWIKI_WARMING=1
 
 # Optional, overrides settings above
-EnvironmentFile=-/etc/default/foswiki
+EnvironmentFile=-/etc/default/foswiki-fastcgi
 
 WorkingDirectory=/var/www
 
