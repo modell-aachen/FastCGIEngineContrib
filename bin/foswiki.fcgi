@@ -45,7 +45,7 @@ our ($dir)    = Cwd::cwd() =~ /^(.*)$/;
 
 my @argv = @ARGV;
 
-my ( $listen, $nproc, $max, $size, $check, $pidfile, $manager, $detach, $help, $quiet, $warming );
+my ( $listen, $nproc, $max, $size, $check, $pidfile, $manager, $detach, $help, $quiet, $warming, $die_timeout );
 GetOptions(
     'listen|l=s'  => \$listen,
     'nproc|n=i'   => \$nproc,
@@ -58,6 +58,7 @@ GetOptions(
     'help|?'      => \$help,
     'quiet|q=i'   => \$quiet,
     'warming|w=i' => \$warming,
+    'dtimeout|t=i' => \$die_timeout,
 );
 
 pod2usage(1) if $help;
@@ -82,6 +83,7 @@ $Foswiki::engine->run(
         size    => $size,
         check   => $check,
         warming => $warming,
+        die_timeout => $die_timeout,
     }
 );
 
@@ -101,6 +103,8 @@ foswiki.fcgi [options]
     -s --size       Maximum memory size of a server before being recycled
     -d --daemon     Detach from terminal and keeps running as a daemon
     -q --quiet      Disable notification messages
+    -t --dtimeout   Gracetime for workers to end when shutting down
+    -w --warming    Enable warming of workers, defaults to 1
     -? --help       Display this help and exits
 
   Note:

@@ -90,6 +90,7 @@ sub run {
                     n_processes => $args->{nproc},
                     pid_fname   => $args->{pidfile},
                     quiet       => $args->{quiet},
+                    die_timeout => $args->{die_timeout},
 
                     max_requests =>
                       ( defined $args->{max} ? $args->{max} : $maxRequests ),

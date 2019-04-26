@@ -42,8 +42,8 @@ sub new {
     my $proto = shift;
 
     my $init = shift || {};
-    $init->{pm_title} ||= 'foswiki-fcgi-pm',
-    $init->{die_timeout} = 5,
+    $init->{pm_title} ||= 'foswiki-fcgi-pm';
+    $init->{die_timeout} ||= 5;
     $init->{max_requests} = $ENV{PM_MAX_REQUESTS} || 0 unless defined $init->{max_requests};
     $init->{sizecheck_num_requests} = $ENV{PM_SIZECHECK_NUM_REQUESTS} || 0 unless defined $init->{sizecheck_num_requests};
     $init->{max_size} = $ENV{PM_MAX_SIZE} || 0 unless defined $init->{max_size};
