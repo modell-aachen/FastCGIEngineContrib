@@ -42,7 +42,8 @@ sub new {
     my $proto = shift;
 
     my $init = shift || {};
-    $init->{pm_title} ||= 'foswiki-fcgi-pm';
+    $init->{process_title} ||= 'foswiki-fcgi';
+    $init->{pm_title} ||= $init->{process_title} . '-pm';
     $init->{die_timeout} ||= 5;
     $init->{max_requests} = $ENV{PM_MAX_REQUESTS} || 0 unless defined $init->{max_requests};
     $init->{sizecheck_num_requests} = $ENV{PM_SIZECHECK_NUM_REQUESTS} || 0 unless defined $init->{sizecheck_num_requests};
@@ -112,6 +113,23 @@ sub pm_notify {
 
     return if $this->{quiet};
     $this->SUPER::pm_notify($msg);
+}
+
+sub handling_init {
+    my ($this) = @_;
+
+    # begin to handle signals.
+    # We'll want accept(2) to return -1(EINTR) on caught signal..
+    unless ($this->no_signals()) {
+        sigaction(SIGTERM, $this->{sigaction_no_sa_restart}) or $this->pm_warn("sigaction: SIGTERM: $!");
+        sigaction(SIGHUP,  $this->{sigaction_no_sa_restart}) or $this->pm_warn("sigaction: SIGHUP: $!");
+        $SIG_CODEREF = sub {
+            $this->sig_handler(@_) if $this;
+        };
+    }
+
+    # change the name of this process as it appears in ps(1) output.
+    $this->pm_change_process_name($this->{process_title});
 }
 
 1;
