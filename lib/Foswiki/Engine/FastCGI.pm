@@ -90,6 +90,7 @@ sub run {
                     n_processes => $args->{nproc},
                     pid_fname   => $args->{pidfile},
                     quiet       => $args->{quiet},
+                    die_timeout => $args->{die_timeout},
 
                     max_requests =>
                       ( defined $args->{max} ? $args->{max} : $maxRequests ),
@@ -102,39 +103,24 @@ sub run {
                 }
             );
 
+            $this->warm($manager) if $args->{warming};
+
             $manager->pm_manage();
         }
         else {    # No ProcManager
-
-            # ProcManager is in charge SIGHUP handling. If there is no manager,
-            # we handle SIGHUP ourslves.
-            eval {
-                sigaction( SIGHUP,
-                    POSIX::SigAction->new( sub { $hupRecieved++ } ) );
-            };
-            warn "Could not install SIGHUP handler: $@$!" if $@ || $@;
+            print STDERR "WARNING: No ProcManager found, running in (slow) fallback mode!\n$@\n";
         }
         $this->daemonize() if $args->{detach};
     }
 
-    my $localSiteCfg;
-    my $lastMTime = 0;
-    my $mtime     = 0;
-
-  # If $localSiteCfg is undefined, then foswiki is running in bootstrap mode.
-  # kill and restart the proc manager after every transaction, so that
-  # when the config file is saved, it gets used.   Note that on some high volume
-  # installations, LocalSite.cfg checking needs to be disabled.
-
-    if ( !defined $Foswiki::cfg{FastCGIContrib}{CheckLocalSiteCfg}
-        || $Foswiki::cfg{FastCGIContrib}{CheckLocalSiteCfg} )
-    {
-
-        $localSiteCfg = $INC{'LocalSite.cfg'};
-        if ( defined $localSiteCfg ) {
-            $lastMTime = ( stat $localSiteCfg )[9];
-        }
-    }
+    eval {
+        sigaction( SIGHUP,
+            POSIX::SigAction->new( sub {
+                $hupRecieved++;
+            } )
+        );
+    };
+    warn "Could not install SIGHUP handler: $@$!" if $@ || $@;
 
     while ( $r->Accept() >= 0 ) {
         $manager && $manager->pm_pre_dispatch();
@@ -146,21 +132,37 @@ sub run {
             $this->finalize( $res, $req );
         }
 
-        $mtime = ( stat $localSiteCfg )[9] if defined $localSiteCfg;
-
-        if ( $mtime > $lastMTime || $hupRecieved ) {
+        if ( $hupRecieved ) {
             $r->LastCall();
-            if ($manager) {
-                kill SIGHUP, $manager->pm_parameter('MANAGER_PID');
-            }
-            else {
-                $hupRecieved++;
-            }
         }
         $manager && $manager->pm_post_dispatch();
     }
-    reExec() if $hupRecieved;
+    if($manager) {
+        $manager->pm_notify("stopped accepting requests");
+    } else {
+        reExec() if $hupRecieved;
+    }
     closeSocket();
+}
+
+sub warm {
+    my ($this, $manager) = @_;
+
+    eval {
+        local $ENV{FOSWIKI_ACTION} = 'view';
+        require Foswiki::Request;
+        my $req = Foswiki::Request->new({url => '/System/WebHome?skin=text'});
+        my $session = new Foswiki(undef, $req, { view => 1 });
+        $session->finish() if $session;
+    };
+    if($@) {
+        my $message = "Error while warming: $@\n";
+        if($manager) {
+            $manager->pm_notify($message);
+        } else {
+            warn $message;
+        }
+    }
 }
 
 sub preparePath {
